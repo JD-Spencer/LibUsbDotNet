@@ -342,6 +342,34 @@ public interface IUsbDevice : IDisposable
     Task<int> ControlTransferAsync(UsbSetupPacket setupPacket, byte[] buffer, int offset, int length);
 
     /// <summary>
+    /// Transmits control data over a default control endpoint.
+    /// </summary>
+    /// <param name="setupPacket">
+    /// An 8-byte setup packet which contains parameters for the control request.
+    /// See section 9.3 USB Device Requests of the Universal Serial Bus Specification Revision 2.0 for more information.
+    /// </param>
+    /// <param name="buffer">
+    /// Data to be sent/received from the device.
+    /// </param> 
+    /// <returns>The number of bytes sent or received (depends on the direction of the control transfer).
+    /// </returns>
+    int ControlTransfer(UsbSetupPacket setupPacket, Memory<byte> buffer);
+
+    /// <summary>
+    /// Asynchronously transmits control data over a default control endpoint.
+    /// </summary>
+    /// <param name="setupPacket">
+    /// An 8-byte setup packet which contains parameters for the control request.
+    /// See section 9.3 USB Device Requests of the Universal Serial Bus Specification Revision 2.0 for more information.
+    /// </param>
+    /// <param name="buffer">
+    /// Data to be sent/received from the device.
+    /// </param> 
+    /// <returns>The number of bytes sent or received (depends on the direction of the control transfer).
+    /// </returns>
+    Task<int> ControlTransferAsync(UsbSetupPacket setupPacket, Memory<byte> buffer);
+
+    /// <summary>
     /// Creates a clone of this device.
     /// </summary>
     /// <returns>

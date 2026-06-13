@@ -21,11 +21,14 @@
 //
 
 using LibUsbDotNet.Main;
+
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
 
 namespace LibUsbDotNet.LibUsb;
 
@@ -58,6 +61,7 @@ internal static class AsyncTransfer
     private static readonly ConcurrentDictionary<int, TransferCallbackCompletion>
         TransferDictionary = new();
 
+    [Obsolete("Try to use the TransferAsyncValueTask variant to reduce allocations.")]
     public static unsafe Task<(Error error, int transferLength)> TransferAsync(
         DeviceHandle device,
         byte endPoint,
@@ -66,8 +70,7 @@ internal static class AsyncTransfer
         int timeout,
         int isoPacketSize = 0)
     {
-        if (device == null)
-            throw new ArgumentNullException(nameof(device));
+        ArgumentNullException.ThrowIfNull(device);
 
         int transferId;
 
@@ -134,42 +137,156 @@ internal static class AsyncTransfer
         NativeMethods.FreeTransfer(transfer);
     }
 
-    private static Error GetErrorFromTransferStatus(TransferStatus status)
+#nullable enable
+
+    private sealed class TransferValueTaskSource : IValueTaskSource<(LibUsbDotNet.Error error, int transferLength)>
     {
-        Error ret;
 
-        switch (status)
+        static TransferValueTaskSource()
         {
-            case TransferStatus.Completed:
-                ret = Error.Success;
-                break;
-
-            case TransferStatus.TimedOut:
-                ret = Error.Timeout;
-                break;
-
-            case TransferStatus.Stall:
-                ret = Error.Pipe;
-                break;
-
-            case TransferStatus.Overflow:
-                ret = Error.Overflow;
-                break;
-
-            case TransferStatus.NoDevice:
-                ret = Error.NoDevice;
-                break;
-
-            case TransferStatus.Error:
-            case TransferStatus.Cancelled:
-                ret = Error.Io;
-                break;
-
-            default:
-                ret = Error.Other;
-                break;
+            _sourcePool = [new()];
         }
 
-        return ret;
+        public static TransferValueTaskSource Take(MemoryHandle handle)
+        {
+            var source = _sourcePool.TryTake(out var s) ? s : new TransferValueTaskSource();
+            source.SetHandle(handle);
+            return source;
+        }
+
+        private TransferValueTaskSource()
+        {
+            this.sourceHandler = new();
+            this.memoryHandle = null;
+        }
+
+        private static readonly ConcurrentBag<TransferValueTaskSource> _sourcePool;
+        private ManualResetValueTaskSourceCore<(Error error, int transferLength)> sourceHandler;
+        private MemoryHandle? memoryHandle;
+
+        private void SetHandle(MemoryHandle handle)
+        {
+            this.memoryHandle = handle;
+        }
+
+        public void ReleaseHandle()
+        {
+            var m = this.memoryHandle;
+            this.memoryHandle = null;
+            m?.Dispose();
+        }
+
+        public void Return()
+        {
+            this.ReleaseHandle();
+            this.sourceHandler.Reset();
+            _sourcePool.Add(this);
+        }
+
+        public ValueTaskSourceStatus GetStatus(short token)
+        {
+            return this.sourceHandler.GetStatus(token);
+        }
+
+        public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+        {
+            this.sourceHandler.OnCompleted(continuation, state, token, flags);
+        }
+
+        public (Error error, int transferLength) GetResult(short token)
+        {
+            var result = sourceHandler.GetResult(token);
+            this.Return();
+            return result;
+        }
+
+        public void SetResult(Error error, int transferLength)
+        {
+            this.sourceHandler.SetResult((error, transferLength));
+        }
+
+        public ValueTask<(Error error, int transferLength)> Task => new(this, this.sourceHandler.Version);
     }
+
+    public static unsafe ValueTask<(Error error, int transferLength)> TransferAsyncValueTask(
+      DeviceHandle device,
+      byte endPoint,
+      EndpointType endPointType,
+      Memory<byte> buffer,
+      int timeout,
+      int isoPacketSize = 0)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        int numIsoPackets = isoPacketSize switch
+        {
+            > 0 => buffer.Length / isoPacketSize,
+            _ => 0
+        };
+
+        ref var transfer = ref Unsafe.AsRef<Transfer>(NativeMethods.AllocTransfer(numIsoPackets));
+
+        if (Unsafe.IsNullRef(ref transfer))
+        {
+            throw new UsbException("Could not allocate the async transfer.");
+        }
+
+        var memoryHandle = buffer.Pin();
+        var taskSource = TransferValueTaskSource.Take(memoryHandle);
+        var gchandle = GCHandle.Alloc(taskSource);
+
+        transfer = transfer with
+        {
+            DevHandle = device.DangerousGetHandle(),
+            Endpoint = endPoint,
+            Timeout = (uint)timeout,
+            Type = (byte)endPointType,
+            Buffer = (byte*)memoryHandle.Pointer,
+            Length = buffer.Length,
+            NumIsoPackets = numIsoPackets,
+            Flags = (byte)TransferFlags.None,
+            UserData = (nint)gchandle,
+            Callback = (nint)(delegate*<ref Transfer, void>)&Callback
+        };
+
+        var error = NativeMethods.SubmitTransfer((Transfer*)Unsafe.AsPointer(ref transfer));
+
+        if (error != Error.Success)
+        {
+            taskSource.Return();
+            error.ThrowOnError();
+        }
+
+        return taskSource.Task;
+
+        static void Callback(ref Transfer transfer)
+        {
+            var gch = GCHandle.FromIntPtr(transfer.UserData);
+            TransferValueTaskSource? source = null;
+            try
+            {
+                source = gch.Target as TransferValueTaskSource ?? throw new InvalidOperationException("Cannot complete async transfer.");
+                source.SetResult(GetErrorFromTransferStatus(transfer.Status), transfer.ActualLength);
+            }
+            finally
+            {
+                source?.ReleaseHandle();
+                gch.Free();
+                NativeMethods.FreeTransfer((Transfer*)Unsafe.AsPointer(ref transfer));
+            }
+        }
+    }
+
+    private static Error GetErrorFromTransferStatus(TransferStatus status) => status switch
+    {
+        TransferStatus.Completed => Error.Success,
+        TransferStatus.TimedOut => Error.Timeout,
+        TransferStatus.Stall => Error.Pipe,
+        TransferStatus.Overflow => Error.Overflow,
+        TransferStatus.NoDevice => Error.NoDevice,
+        TransferStatus.Error or TransferStatus.Cancelled => Error.Io,
+        _ => Error.Other,
+    };
+
+
 }

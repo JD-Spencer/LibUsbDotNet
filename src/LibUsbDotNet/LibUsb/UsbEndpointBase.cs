@@ -200,7 +200,7 @@ public abstract class UsbEndpointBase
     /// If you expect to receive data from the native API and have it written to the original buffer,
     /// use the <see cref="TransferAsync(Memory{byte},int)"/> method.
     /// </remarks>
-    protected async Task<(Error error, int transferLength)> TransferAsync(ReadOnlyMemory<byte> readOnlyBuffer, int timeout)
+    protected async ValueTask<(Error error, int transferLength)> TransferAsync(ReadOnlyMemory<byte> readOnlyBuffer, int timeout)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(readOnlyBuffer.Length);
 
@@ -237,8 +237,8 @@ public abstract class UsbEndpointBase
     /// <param name="buffer">Caller-allocated buffer.</param>
     /// <param name="timeout">Maximum time to wait for the transfer to complete.</param>
     /// <returns>Named tuple of <see cref="Error"/> and transferLength</returns>
-    protected Task<(Error error, int transferLength)> TransferAsync(Memory<byte> buffer, int timeout) =>
-        AsyncTransfer.TransferAsync(this.Device.DeviceHandle, this.mEpNum, this.mEndpointType, buffer, timeout);
+    private ValueTask<(Error error, int transferLength)> TransferAsync(Memory<byte> buffer, int timeout) =>
+        AsyncTransfer.TransferAsyncValueTask(this.Device.DeviceHandle, this.mEpNum, this.mEndpointType, buffer, timeout);
 
     /// <summary>
     /// Looks up endpoint/interface information in a configuration.

@@ -20,6 +20,9 @@
 // 
 //
 
+using MethodImplAttribute = System.Runtime.CompilerServices.MethodImplAttribute;
+using MethodImplOptions = System.Runtime.CompilerServices.MethodImplOptions;
+
 namespace LibUsbDotNet.LibUsb;
 
 /// <summary>
@@ -33,9 +36,10 @@ public static class ErrorExtensions
     /// <param name="error">
     /// The error code based on which to throw an exception.
     /// </param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ThrowOnError(this Error error)
     {
-        if (error != Error.Success)
+        if (error is not Error.Success)
         {
             throw new UsbException(error);
         }
@@ -51,40 +55,23 @@ public static class ErrorExtensions
     /// <returns>
     /// The function's return value (if ret &gt;= 0);.
     /// </returns>
-    public static int GetValueOrThrow(this Error error)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int GetValueOrThrow(this Error error) => (int)error switch
     {
-        int value = (int)error;
+        < 0 => throw new UsbException(error),
+        int e => e
+    };
 
-        if (value < 0)
-        {
-            throw new UsbException(error);
-        }
-        else
-        {
-            return value;
-        }
-    }
-
-    public static Error ToError(TransferStatus transferStatus)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Error ToError(TransferStatus transferStatus) => transferStatus switch
     {
-        switch (transferStatus)
-        {
-            case TransferStatus.Completed:
-                return Error.Success;
-            case TransferStatus.Error:
-                return Error.Pipe;
-            case TransferStatus.TimedOut:
-                return Error.Timeout;
-            case TransferStatus.Cancelled:
-                return Error.Io;
-            case TransferStatus.Stall:
-                return Error.Pipe;
-            case TransferStatus.NoDevice:
-                return Error.NoDevice;
-            case TransferStatus.Overflow:
-                return Error.Overflow;
-            default:
-                return Error.Other;
-        }
-    }
+        TransferStatus.Completed => Error.Success,
+        TransferStatus.Error => Error.Pipe,
+        TransferStatus.TimedOut => Error.Timeout,
+        TransferStatus.Cancelled => Error.Io,
+        TransferStatus.Stall => Error.Pipe,
+        TransferStatus.NoDevice => Error.NoDevice,
+        TransferStatus.Overflow => Error.Overflow,
+        _ => Error.Other,
+    };
 }

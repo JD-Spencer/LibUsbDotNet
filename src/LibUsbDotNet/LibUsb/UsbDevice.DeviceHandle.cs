@@ -22,6 +22,7 @@
 
 using LibUsbDotNet.Descriptors;
 using LibUsbDotNet.Main;
+
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -172,6 +173,51 @@ public partial class UsbDevice
                     (ushort)length,
                     (uint)ControlTransferTimeout);
             }
+        }
+        else
+        {
+            result = NativeMethods.ControlTransfer(
+                this.deviceHandle,
+                setupPacket.RequestType,
+                setupPacket.Request,
+                (ushort)setupPacket.Value,
+                (ushort)setupPacket.Index,
+                null,
+                0,
+                (uint)ControlTransferTimeout);
+        }
+
+        if (result >= 0)
+        {
+            return result;
+        }
+        else
+        {
+            throw new UsbException((Error)result);
+        }
+    }
+
+
+    /// <inheritdoc/>
+    public unsafe int ControlTransfer(UsbSetupPacket setupPacket, Memory<byte> buffer)
+    {
+        this.EnsureNotDisposed();
+        this.EnsureOpen();
+        
+        int result = 0;
+
+        if (buffer.Length > 0)
+        {
+            using var pin = buffer.Pin();
+            result = NativeMethods.ControlTransfer(
+                this.deviceHandle,
+                setupPacket.RequestType,
+                setupPacket.Request,
+                (ushort)setupPacket.Value,
+                (ushort)setupPacket.Index,
+                (byte*)pin.Pointer,
+                (ushort)buffer.Length,
+                (uint)ControlTransferTimeout);
         }
         else
         {

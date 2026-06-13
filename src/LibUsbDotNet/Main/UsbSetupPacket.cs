@@ -20,6 +20,8 @@
 // 
 //
 
+using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace LibUsbDotNet.Main;
@@ -95,4 +97,25 @@ public struct UsbSetupPacket
             this.Length = (short)(wlength & 0xFFFF);
         }
     }
+
+    /// <summary>
+    /// Writes the content of <see cref="UsbSetupPacket"/> to a span.
+    /// </summary>
+    /// <param name="span">The span to write the setup packet to.</param>
+    public readonly void WriteToSpan(Span<byte> span)
+    {
+        WriteToSpan(span, RequestType, Request, Value, Index, Length);
+    }
+
+    public static void WriteToSpan(Span<byte> span, byte reqType, byte req, short value, short index, short length)
+    {
+        if (span.Length < 8) throw new ArgumentException("Not enough room in span.", nameof(span));
+        span[0] = reqType;
+        span[1] = req;
+        Unsafe.WriteUnaligned(ref span.Slice(2, 2)[0], value);
+        Unsafe.WriteUnaligned(ref span.Slice(4, 2)[0], index);
+        Unsafe.WriteUnaligned(ref span.Slice(6, 2)[0], length);
+    }
+
+
 }
