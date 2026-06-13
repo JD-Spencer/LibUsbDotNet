@@ -84,7 +84,7 @@ public partial class UsbEndpointReader : UsbEndpointBase
     /// <summary>
     /// Reads/discards data from the endpoint until no more data is available.
     /// </summary>
-    /// <returns>Always returns <see cref="Error.Success"/> </returns>
+    /// <returns>Always returns <see cref="Error.Success"/> </returns> 
     public virtual Error ReadFlush()
     {
         byte[] bufDummy = new byte[64];

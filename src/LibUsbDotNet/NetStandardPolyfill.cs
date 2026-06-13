@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 #nullable enable
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 #if NETSTANDARD2_0
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace System
 {
     internal static class NetStandardPolyfill
@@ -20,7 +20,7 @@ namespace System
             public static void ThrowIfNull(object? argument,
                 [CallerArgumentExpression(nameof(argument))] string? paramName = default)
             {
-                if (argument == null) throw new ArgumentNullException(paramName);
+                if (argument == null) throw new ArgumentNullException(paramName); 
             } 
         }
 

@@ -188,7 +188,7 @@ internal static class AsyncTransfer
             return this.sourceHandler.GetStatus(token);
         }
 
-        public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+        public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
         {
             this.sourceHandler.OnCompleted(continuation, state, token, flags);
         }
