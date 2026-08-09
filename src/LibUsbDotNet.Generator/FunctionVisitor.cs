@@ -1,10 +1,10 @@
-﻿// <copyright file="FunctionVisitor.cs" company="Quamotion">
-// Copyright (c) Quamotion. All rights reserved.
-// </copyright>
+﻿// SPDX-FileCopyrightText: Copyright (c) Quamotion
+// SPDX-License-Identifier: LGPL-2.0-or-later
 
 using Core.Clang;
 using Core.Clang.Documentation.Doxygen;
 using LibUsbDotNet.Generator.Primitives;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -24,7 +24,18 @@ namespace LibUsbDotNet.Generator
         public ChildVisitResult Visit(Cursor cursor, Cursor parent)
         {
             // We only care about function declarations in the main file.
-            if (!cursor.GetLocation().IsFromMainFile())
+            // GetLocation() can return null for cursors that libclang/ClangSharp
+            // synthesizes without a backing source location (observed with newer
+            // libusb/clang headers). Warn and skip rather than crashing.
+            var location = cursor.GetLocation();
+
+            if (location == null)
+            {
+                Console.Error.WriteLine($"Warning: skipping function cursor '{cursor.GetSpelling()}' with no source location.");
+                return ChildVisitResult.Continue;
+            }
+
+            if (!location.IsFromMainFile())
             {
                 return ChildVisitResult.Continue;
             }
@@ -136,7 +147,17 @@ namespace LibUsbDotNet.Generator
             // - Full Comment
             // - Paragraph Comment or ParamCommand comment
             // - Text Comment
+            // Comment.FromCursor returns null when libclang produces no parsed
+            // comment tree for this cursor (observed with newer headers). Warn so
+            // that silently dropped documentation does not go unnoticed.
             var fullComment = Comment.FromCursor(cursor);
+
+            if (fullComment == null)
+            {
+                Console.Error.WriteLine($"Warning: no parsed documentation for function cursor '{cursor.GetSpelling()}'.");
+                return;
+            }
+
             var fullCommentKind = fullComment.GetKind();
             var fullCommentChildren = fullComment.GetNumChildren();
 
@@ -147,7 +168,15 @@ namespace LibUsbDotNet.Generator
 
             for (uint i = 0; i < fullCommentChildren; i++)
             {
+                // GetChild can return null for a malformed/partial comment tree;
+                // skip the node rather than dereferencing it.
                 var childComment = fullComment.GetChild(i);
+
+                if (childComment == null)
+                {
+                    continue;
+                }
+
                 var childCommentKind = childComment.GetKind();
 
                 if (childCommentKind != CommentKind.Paragraph
@@ -216,6 +245,12 @@ namespace LibUsbDotNet.Generator
                 for (uint i = 0; i < childCount; i++)
                 {
                     var child = comment.GetChild(i);
+
+                    if (child == null)
+                    {
+                        continue;
+                    }
+
                     this.GetCommentInnerText(child, builder);
                 }
             }
